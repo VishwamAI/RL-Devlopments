@@ -1,17 +1,17 @@
 # MIT License
-# 
+#
 # Copyright (c) 2024 VishwamAI
-# 
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -24,7 +24,7 @@
 Advanced Reinforcement Learning Algorithms Module - PyTorch Version
 
 This module implements advanced reinforcement learning algorithms including
-Soft Actor-Critic (SAC) and Twin Delayed DDPG (TD3) using PyTorch.
+Proximal Policy Optimization (PPO) and Deep Deterministic Policy Gradient (DDPG) using PyTorch.
 """
 
 import torch
@@ -73,27 +73,93 @@ class Critic(nn.Module):
         return x
 
 
-class SACAgent:
-    """Soft Actor-Critic (SAC) agent implementation in PyTorch."""
-    def __init__(self, state_dim, action_dim, hidden_dim=256, lr=3e-4, gamma=0.99, tau=0.005, alpha=0.2):
+class PPOAgent:
+    """Proximal Policy Optimization (PPO) agent implementation in PyTorch."""
+    def __init__(self, state_dim, action_dim, hidden_dim=256, lr=3e-4, gamma=0.99, epsilon=0.2, value_coef=0.5, entropy_coef=0.01):
         self.gamma = gamma
-        self.tau = tau
-        self.alpha = alpha
+        self.epsilon = epsilon
+        self.value_coef = value_coef
+        self.entropy_coef = entropy_coef
 
         # Networks
         self.actor = Actor(state_dim, action_dim, hidden_dim).to('cuda')
-        self.critic1 = Critic(state_dim, action_dim, hidden_dim).to('cuda')
-        self.critic2 = Critic(state_dim, action_dim, hidden_dim).to('cuda')
-        self.target_critic1 = Critic(state_dim, action_dim, hidden_dim).to('cuda')
-        self.target_critic2 = Critic(state_dim, action_dim, hidden_dim).to('cuda')
-
-        # Copy weights to target networks
-        self.target_critic1.load_state_dict(self.critic1.state_dict())
-        self.target_critic2.load_state_dict(self.critic2.state_dict())
+        self.critic = Critic(state_dim, action_dim, hidden_dim).to('cuda')
 
         # Optimizers
         self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=lr)
-        self.critic_optimizer = optim.Adam(list(self.critic1.parameters()) + list(self.critic2.parameters()), lr=lr)
+        self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=lr)
+
+    def select_action(self, state):
+        state = torch.FloatTensor(state).to('cuda').unsqueeze(0)
+        action_probs = self.actor(state)
+        dist = torch.distributions.Categorical(action_probs)
+        action = dist.sample()
+        return action.item(), dist.log_prob(action).item()
+
+    def update(self, states, actions, old_log_probs, rewards, dones, next_states):
+        states = torch.FloatTensor(states).to('cuda')
+        actions = torch.LongTensor(actions).to('cuda')
+        old_log_probs = torch.FloatTensor(old_log_probs).to('cuda')
+        rewards = torch.FloatTensor(rewards).to('cuda')
+        dones = torch.FloatTensor(dones).to('cuda')
+        next_states = torch.FloatTensor(next_states).to('cuda')
+
+        # Compute advantages
+        with torch.no_grad():
+            values = self.critic(states, self.actor(states)).squeeze()
+            next_values = self.critic(next_states, self.actor(next_states)).squeeze()
+            advantages = rewards + self.gamma * next_values * (1 - dones) - values
+
+        # PPO update
+        for _ in range(10):  # Number of epochs
+            # Actor loss
+            action_probs = self.actor(states)
+            dist = torch.distributions.Categorical(action_probs)
+            new_log_probs = dist.log_prob(actions)
+            ratio = torch.exp(new_log_probs - old_log_probs)
+            surr1 = ratio * advantages
+            surr2 = torch.clamp(ratio, 1 - self.epsilon, 1 + self.epsilon) * advantages
+            actor_loss = -torch.min(surr1, surr2).mean()
+
+            # Critic loss
+            value_pred = self.critic(states, self.actor(states)).squeeze()
+            value_loss = nn.MSELoss()(value_pred, rewards + self.gamma * next_values * (1 - dones))
+
+            # Entropy bonus
+            entropy = dist.entropy().mean()
+
+            # Total loss
+            loss = actor_loss + self.value_coef * value_loss - self.entropy_coef * entropy
+
+            # Update networks
+            self.actor_optimizer.zero_grad()
+            self.critic_optimizer.zero_grad()
+            loss.backward()
+            self.actor_optimizer.step()
+            self.critic_optimizer.step()
+
+        return actor_loss.item(), value_loss.item(), entropy.item()
+
+
+class DDPGAgent:
+    """Deep Deterministic Policy Gradient (DDPG) agent implementation in PyTorch."""
+    def __init__(self, state_dim, action_dim, hidden_dim=256, lr=1e-4, gamma=0.99, tau=0.001):
+        self.gamma = gamma
+        self.tau = tau
+
+        # Networks
+        self.actor = Actor(state_dim, action_dim, hidden_dim).to('cuda')
+        self.critic = Critic(state_dim, action_dim, hidden_dim).to('cuda')
+        self.target_actor = Actor(state_dim, action_dim, hidden_dim).to('cuda')
+        self.target_critic = Critic(state_dim, action_dim, hidden_dim).to('cuda')
+
+        # Copy weights to target networks
+        self.target_actor.load_state_dict(self.actor.state_dict())
+        self.target_critic.load_state_dict(self.critic.state_dict())
+
+        # Optimizers
+        self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=lr)
+        self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=lr)
 
     def select_action(self, state):
         state = torch.FloatTensor(state).to('cuda').unsqueeze(0)
@@ -103,49 +169,52 @@ class SACAgent:
     def update(self, replay_buffer, batch_size=64):
         # Sample batch
         state, action, reward, next_state, done = replay_buffer.sample(batch_size)
-        
+
         state = torch.FloatTensor(state).to('cuda')
         action = torch.FloatTensor(action).to('cuda')
         reward = torch.FloatTensor(reward).unsqueeze(1).to('cuda')
         next_state = torch.FloatTensor(next_state).to('cuda')
         done = torch.FloatTensor(done).unsqueeze(1).to('cuda')
 
-        # Compute target Q-values
+        # Compute target Q-value
         with torch.no_grad():
-            next_action = self.actor(next_state)
-            target_q1 = self.target_critic1(next_state, next_action)
-            target_q2 = self.target_critic2(next_state, next_action)
-            target_q = reward + self.gamma * (1 - done) * torch.min(target_q1, target_q2)
+            target_action = self.target_actor(next_state)
+            target_q = self.target_critic(next_state, target_action)
+            target_q = reward + self.gamma * target_q * (1 - done)
 
-        # Update critics
-        current_q1 = self.critic1(state, action)
-        current_q2 = self.critic2(state, action)
-        critic_loss = nn.functional.mse_loss(current_q1, target_q) + nn.functional.mse_loss(current_q2, target_q)
-        
+        # Update critic
+        current_q = self.critic(state, action)
+        critic_loss = nn.MSELoss()(current_q, target_q)
         self.critic_optimizer.zero_grad()
         critic_loss.backward()
         self.critic_optimizer.step()
 
         # Update actor
-        actor_loss = -self.critic1(state, self.actor(state)).mean()
+        actor_loss = -self.critic(state, self.actor(state)).mean()
         self.actor_optimizer.zero_grad()
         actor_loss.backward()
         self.actor_optimizer.step()
 
-        # Soft update target critics
-        for target_param, param in zip(self.target_critic1.parameters(), self.critic1.parameters()):
+        # Soft update target networks
+        for target_param, param in zip(self.target_actor.parameters(), self.actor.parameters()):
             target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
-        for target_param, param in zip(self.target_critic2.parameters(), self.critic2.parameters()):
+        for target_param, param in zip(self.target_critic.parameters(), self.critic.parameters()):
             target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
 
+        return critic_loss.item(), actor_loss.item()
 
-# Example for creating an SAC Agent
+
+# Example for creating PPO and DDPG Agents
 if __name__ == "__main__":
     state_dim = 33  # Example state dimension
     action_dim = 4  # Example action dimension
-    agent = SACAgent(state_dim, action_dim)
+
+    ppo_agent = PPOAgent(state_dim, action_dim)
+    ddpg_agent = DDPGAgent(state_dim, action_dim)
 
     # Example usage:
     state = np.random.randn(state_dim)
-    action = agent.select_action(state)
-    print("Selected Action:", action)
+    ppo_action, _ = ppo_agent.select_action(state)
+    ddpg_action = ddpg_agent.select_action(state)
+    print("PPO Selected Action:", ppo_action)
+    print("DDPG Selected Action:", ddpg_action)

@@ -1,17 +1,17 @@
 # MIT License
-# 
+#
 # Copyright (c) 2024 VishwamAI
-# 
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -24,21 +24,19 @@
 Advanced Reinforcement Learning Algorithms Module - TensorFlow Version
 
 This module implements advanced reinforcement learning algorithms including
-Soft Actor-Critic (SAC) and Twin Delayed DDPG (TD3) using TensorFlow/Keras.
+Proximal Policy Optimization (PPO) and Deep Deterministic Policy Gradient (DDPG) using TensorFlow/Keras.
 """
 
 import tensorflow as tf
 from tensorflow.keras import layers
 import numpy as np
 
-
 class Actor(tf.keras.Model):
-    """Actor network with improved architecture for SAC and TD3 in TensorFlow."""
+    """Actor network for PPO and DDPG in TensorFlow."""
     def __init__(self, state_dim, action_dim, hidden_dim=256):
         super(Actor, self).__init__()
         self.fc1 = layers.Dense(hidden_dim, activation='relu')
         self.layer_norm1 = layers.LayerNormalization()
-        self.dropout = layers.Dropout(0.1)
         self.fc2 = layers.Dense(hidden_dim, activation='relu')
         self.layer_norm2 = layers.LayerNormalization()
         self.output_layer = layers.Dense(action_dim, activation='tanh')
@@ -46,7 +44,24 @@ class Actor(tf.keras.Model):
     def call(self, state):
         x = self.fc1(state)
         x = self.layer_norm1(x)
-        x = self.dropout(x)
+        x = self.fc2(x)
+        x = self.layer_norm2(x)
+        return self.output_layer(x)
+
+class Critic(tf.keras.Model):
+    """Critic network for PPO and DDPG in TensorFlow."""
+    def __init__(self, state_dim, action_dim, hidden_dim=256):
+        super(Critic, self).__init__()
+        self.fc1 = layers.Dense(hidden_dim, activation='relu')
+        self.layer_norm1 = layers.LayerNormalization()
+        self.fc2 = layers.Dense(hidden_dim, activation='relu')
+        self.layer_norm2 = layers.LayerNormalization()
+        self.output_layer = layers.Dense(1)
+
+    def call(self, state, action):
+        x = tf.concat([state, action], axis=-1)
+        x = self.fc1(x)
+        x = self.layer_norm1(x)
         x = self.fc2(x)
         x = self.layer_norm2(x)
         return self.output_layer(x)
