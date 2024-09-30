@@ -1,0 +1,6 @@
+rl_project/pytorch/fresh_pytorch_env/
+rl_project/pytorch/pytorch_env/
+rl_project/jax/logs/
+rl_project/pytorch/logs/
+**/__pycache__/
+*.pyc
