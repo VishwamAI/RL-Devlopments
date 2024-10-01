@@ -1,15 +1,15 @@
 # JAX with Flax and Optax
-jax==0.4.6
-jaxlib==0.4.6+cuda11.cu117  # Change according to your CUDA version, or use the CPU version
-flax==0.5.1
-optax==0.1.2
+jax
+jaxlib  # Change according to your CUDA version, or use the CPU version
+flax
+optax
 
 # PyTorch
-torch==2.0.1
-torchvision==0.15.2  # Optional, if you need computer vision functionalities
+torch
+torchvision  # Optional, if you need computer vision functionalities
 
 # TensorFlow
-tensorflow==2.12.0  # Adjust based on your needs
+tensorflow  # Adjust based on your needs
 
-# numpy
+# NumPy
 numpy
