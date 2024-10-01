@@ -29,8 +29,6 @@ from typing import List, Dict, Any
 import gym
 import logging
 import time
-from ..utils import utils
-from ..core_neural_networks import JAXModel, CNN, LSTMModule, LRNN, MachineLearning
 from .rl_module import PrioritizedReplayBuffer, RLAgent, RLEnvironment, train_rl_agent
 
 class QNetwork(nn.Module):

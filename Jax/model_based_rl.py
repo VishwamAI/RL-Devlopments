@@ -26,6 +26,8 @@ from jax import grad, jit, vmap
 import optax  # JAX equivalent for optimization algorithms
 import gym
 import numpy as np
+import jax.nn as nn
+import math
 
 # Define the Environment Model in JAX
 class EnvironmentModel:
@@ -144,6 +146,112 @@ def train_agent(env, agent, num_episodes=1000, planning_horizon=5, num_simulatio
             print(f"Episode {episode}, Reward: {total_reward}")
 
     return agent
+class MCTSAgent:
+    def __init__(self, state_dim, action_dim, num_simulations=100, exploration_constant=1.41):
+        self.state_dim = state_dim
+        self.action_dim = action_dim
+        self.num_simulations = num_simulations
+        self.exploration_constant = exploration_constant
+        self.env_model = EnvironmentModel(state_dim, action_dim)
+        self.value_network = nn.Sequential(
+            nn.Dense(64),
+            nn.relu,
+            nn.Dense(64),
+            nn.relu,
+            nn.Dense(1)
+        )
+        self.policy_network = nn.Sequential(
+            nn.Dense(64),
+            nn.relu,
+            nn.Dense(64),
+            nn.relu,
+            nn.Dense(action_dim)
+        )
+        self.optimizer = optax.adam(learning_rate=1e-3)
+        self.value_params = self.value_network.init(jax.random.PRNGKey(0), jnp.zeros((1, state_dim)))
+        self.policy_params = self.policy_network.init(jax.random.PRNGKey(1), jnp.zeros((1, state_dim)))
+        self.value_opt_state = self.optimizer.init(self.value_params)
+        self.policy_opt_state = self.optimizer.init(self.policy_params)
+
+    @jax.jit
+    def value(self, state):
+        return self.value_network.apply(self.value_params, state)
+
+    @jax.jit
+    def policy(self, state):
+        return self.policy_network.apply(self.policy_params, state)
+
+    def select_action(self, state):
+        root = MCTSNode(state)
+        for _ in range(self.num_simulations):
+            node = root
+            while not node.is_leaf():
+                node = node.select_child(self.exploration_constant)
+            value = self.simulate(node.state)
+            node.backpropagate(value)
+        return root.best_child().action
+
+    def simulate(self, state):
+        action = self.policy(state)
+        next_state = self.env_model.predict(state, action)
+        return self.value(next_state)
+
+    @jax.jit
+    def update(self, states, actions, rewards, next_states, dones):
+        def value_loss_fn(params):
+            predicted_values = jax.vmap(lambda s: self.value_network.apply(params, s))(states)
+            target_values = rewards + (1 - dones) * 0.99 * jax.vmap(lambda s: self.value_network.apply(params, s))(next_states)
+            return jnp.mean((predicted_values - target_values) ** 2)
+
+        def policy_loss_fn(params):
+            log_probs = jax.vmap(lambda s: jax.nn.log_softmax(self.policy_network.apply(params, s)))(states)
+            advantages = rewards + (1 - dones) * 0.99 * jax.vmap(lambda s: self.value(s))(next_states) - jax.vmap(lambda s: self.value(s))(states)
+            return -jnp.mean(jnp.sum(log_probs * advantages, axis=-1))
+
+        value_loss, value_grads = jax.value_and_grad(value_loss_fn)(self.value_params)
+        policy_loss, policy_grads = jax.value_and_grad(policy_loss_fn)(self.policy_params)
+
+        value_updates, self.value_opt_state = self.optimizer.update(value_grads, self.value_opt_state)
+        policy_updates, self.policy_opt_state = self.optimizer.update(policy_grads, self.policy_opt_state)
+
+        self.value_params = optax.apply_updates(self.value_params, value_updates)
+        self.policy_params = optax.apply_updates(self.policy_params, policy_updates)
+
+        return value_loss, policy_loss
+
+class MCTSNode:
+    def __init__(self, state, parent=None, action=None):
+        self.state = state
+        self.parent = parent
+        self.action = action
+        self.children = []
+        self.visits = 0
+        self.value = 0
+
+    def is_leaf(self):
+        return len(self.children) == 0
+
+    def select_child(self, exploration_constant):
+        return max(self.children, key=lambda c: c.ucb_score(exploration_constant))
+
+    def ucb_score(self, exploration_constant):
+        if self.visits == 0:
+            return float('inf')
+        return self.value / self.visits + exploration_constant * math.sqrt(math.log(self.parent.visits) / self.visits)
+
+    def expand(self, action, next_state):
+        child = MCTSNode(next_state, parent=self, action=action)
+        self.children.append(child)
+        return child
+
+    def backpropagate(self, value):
+        self.visits += 1
+        self.value += value
+        if self.parent:
+            self.parent.backpropagate(value)
+
+    def best_child(self):
+        return max(self.children, key=lambda c: c.visits)
 
 def main():
     env = gym.make('Pendulum-v1')

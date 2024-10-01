@@ -29,7 +29,6 @@ import logging
 import time
 from typing import Dict, Any, List, Tuple
 from .rl_module import PrioritizedReplayBuffer, RLEnvironment
-from ..utils import utils
 
 
 class QNetwork(nn.Module):
@@ -43,6 +42,81 @@ class QNetwork(nn.Module):
             x = nn.relu(x)
         return nn.Dense(self.action_dim)(x)
 
+class SelfCuringRL:
+    def __init__(self, env: RLEnvironment, agent: SelfCuringRLAgent):
+        self.env = env
+        self.agent = agent
+        self.logger = logging.getLogger(__name__)
+
+    def train(self, num_episodes: int, max_steps: int) -> None:
+        for episode in range(num_episodes):
+            state = self.env.reset()
+            total_reward = 0
+
+            for step in range(max_steps):
+                action = self.agent.select_action(state, training=True)
+                next_state, reward, done, _ = self.env.step(action)
+                total_reward += reward
+
+                self.agent.replay_buffer.add(state, action, reward, next_state, done)
+
+                if len(self.agent.replay_buffer) > self.agent.replay_buffer.batch_size:
+                    batch = self.agent.replay_buffer.sample()
+                    loss = self.agent.update(batch)
+
+                state = next_state
+
+                if done:
+                    break
+
+            self.agent.epsilon = max(self.agent.epsilon_end, self.agent.epsilon * self.agent.epsilon_decay)
+
+            if episode % 10 == 0:
+                self.logger.info(f"Episode {episode}, Total Reward: {total_reward}, Epsilon: {self.agent.epsilon:.4f}")
+
+            self._check_and_update_agent()
+
+    def _check_and_update_agent(self) -> None:
+        current_time = time.time()
+        if current_time - self.agent.last_update >= self.agent.update_interval:
+            self.agent.performance = self._evaluate_agent()
+            if self.agent.performance < self.agent.performance_threshold:
+                self._self_cure()
+            self.agent.last_update = current_time
+
+    def _evaluate_agent(self, num_eval_episodes: int = 10) -> float:
+        total_rewards = []
+        for _ in range(num_eval_episodes):
+            state = self.env.reset()
+            episode_reward = 0
+            done = False
+            while not done:
+                action = self.agent.select_action(state, training=False)
+                next_state, reward, done, _ = self.env.step(action)
+                episode_reward += reward
+                state = next_state
+            total_rewards.append(episode_reward)
+        return jnp.mean(jnp.array(total_rewards))
+
+    def _self_cure(self) -> None:
+        self.logger.warning("Performance below threshold. Initiating self-curing process.")
+        
+        # Reset epsilon for more exploration
+        self.agent.epsilon = self.agent.epsilon_start
+        
+        # Reinitialize the Q-network
+        self.agent.params = self.agent.q_network.init(jax.random.PRNGKey(int(time.time())), jnp.ones((1, self.agent.features[0])))
+        self.agent.opt_state = self.agent.optimizer.init(self.agent.params)
+        
+        # Clear a portion of the replay buffer
+        self.agent.replay_buffer.clear(fraction=0.5)
+        
+        self.logger.info("Self-curing process completed. Resuming training with reset parameters.")
+
+    def run(self, num_episodes: int, max_steps: int) -> None:
+        self.train(num_episodes, max_steps)
+        final_performance = self._evaluate_agent()
+        self.logger.info(f"Training completed. Final performance: {final_performance:.2f}")
 
 class SelfCuringRLAgent:
     def __init__(self, features: List[int], action_dim: int, learning_rate: float = 1e-4,

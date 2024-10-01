@@ -143,6 +143,45 @@ def inter_agent_communication(agents, messages):
         received_messages = [msg for j, msg in enumerate(messages) if j != i]
         # Process received messages (placeholder)
         pass  # In a real scenario, add agent message handling logic here
+class MultiAgentRL:
+    def __init__(self, num_agents, state_dim, action_dim):
+        self.num_agents = num_agents
+        self.state_dim = state_dim
+        self.action_dim = action_dim
+        self.agents = [MADDPGAgent(state_dim, action_dim) for _ in range(num_agents)]
+
+    def train(self, env, num_episodes=1000):
+        for episode in range(num_episodes):
+            states = env.reset()
+            episode_reward = 0
+
+            while True:
+                actions = [agent.act(jnp.array(state)) for agent, state in zip(self.agents, states)]
+                actions = [action.flatten() for action in actions]
+                next_states, rewards, dones, _ = env.step(actions)
+                episode_reward += sum(rewards)
+
+                for i, agent in enumerate(self.agents):
+                    agent.update(jnp.array([states[i]]), jnp.array([actions[i]]), jnp.array([rewards[i]]), jnp.array([next_states[i]]), jnp.array([dones[i]]))
+
+                states = next_states
+
+                if any(dones):
+                    break
+
+            if episode % 100 == 0:
+                print(f"Episode {episode}, Average Reward: {episode_reward / self.num_agents:.2f}")
+
+        return self.agents
+
+    def communicate(self, messages):
+        for i, agent in enumerate(self.agents):
+            received_messages = [msg for j, msg in enumerate(messages) if j != i]
+            # Process received messages (placeholder)
+            # In a real scenario, add agent message handling logic here
+
+    def act(self, states):
+        return [agent.act(jnp.array(state)) for agent, state in zip(self.agents, states)]
 
 def main():
     num_agents = 3
