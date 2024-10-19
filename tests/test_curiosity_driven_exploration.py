@@ -1,18 +1,20 @@
 import gymnasium as gym
 import numpy as np
 import torch
+import pytest
 from NeuroFlex.reinforcement_learning.curiosity_driven_exploration import CuriosityDrivenAgent, train_curiosity_driven_agent
 
-def test_curiosity_driven_exploration():
-    # Create a simple environment
-    env = gym.make('MountainCar-v0')
+@pytest.fixture
+def env():
+    return gym.make('MountainCar-v0')
+
+@pytest.fixture
+def agent(env):
     state_dim = env.observation_space.shape[0]
     action_dim = env.action_space.n
-    print(f"Environment action dimension: {action_dim}")
+    return CuriosityDrivenAgent(state_dim, action_dim)
 
-    # Initialize the CuriosityDrivenAgent
-    agent = CuriosityDrivenAgent(state_dim, action_dim)
-
+def test_curiosity_driven_exploration(env, agent):
     # Train the agent
     num_episodes = 100
     trained_agent = train_curiosity_driven_agent(env, agent, num_episodes)
@@ -23,28 +25,24 @@ def test_curiosity_driven_exploration():
 
     for _ in range(test_episodes):
         state = env.reset()
-        print(f"Initial state type: {type(state)}, shape: {np.shape(state)}")
         if isinstance(state, tuple):
             state = state[0]  # Extract the state from the tuple if necessary
         state = np.array(state).flatten()  # Ensure state is a flat numpy array
-        print(f"Processed state type: {type(state)}, shape: {state.shape}")
         episode_reward = 0
         done = False
 
         while not done:
             action = trained_agent.act(state)
             next_state, reward, done, _ = env.step(np.argmax(action))
-            print(f"Next state type: {type(next_state)}, shape: {np.shape(next_state)}")
             if isinstance(next_state, tuple):
                 next_state = next_state[0]  # Extract the state from the tuple if necessary
             episode_reward += reward
             state = np.array(next_state).flatten()  # Ensure next_state is a flat numpy array
-            print(f"Processed next state type: {type(state)}, shape: {state.shape}")
 
         total_rewards.append(episode_reward)
 
     avg_reward = np.mean(total_rewards)
-    print(f"Average test episode reward: {avg_reward:.2f}")
+    assert avg_reward > -200, f"Average test episode reward is too low: {avg_reward:.2f}"
 
     # Test ICM
     state = env.reset()
@@ -62,24 +60,18 @@ def test_curiosity_driven_exploration():
         torch.FloatTensor(next_state).unsqueeze(0),
         torch.FloatTensor(action).unsqueeze(0)
     )
-    print(f"Intrinsic reward: {intrinsic_reward:.4f}")
+    assert intrinsic_reward.item() > 0, f"Intrinsic reward is too low: {intrinsic_reward.item():.4f}"
 
     # Test novelty detection
     novelty = trained_agent.novelty_detector.compute_novelty(next_state)
     is_novel = trained_agent.novelty_detector.is_novel(next_state)
-    print(f"Novelty: {novelty:.4f}")
-    print(f"Is novel: {is_novel}")
+    assert novelty > 0, f"Novelty is too low: {novelty:.4f}"
+    assert is_novel, "State is not novel"
 
     # Verify that the agent improves over time
     initial_rewards = total_rewards[:5]
     final_rewards = total_rewards[-5:]
-    print(f"Initial rewards: {initial_rewards}")
-    print(f"Final rewards: {final_rewards}")
-
-    if np.mean(final_rewards) > np.mean(initial_rewards):
-        print("Agent shows improvement over time.")
-    else:
-        print("Agent does not show significant improvement. Further tuning may be required.")
+    assert np.mean(final_rewards) > np.mean(initial_rewards), "Agent does not show significant improvement"
 
 if __name__ == "__main__":
-    test_curiosity_driven_exploration()
+    pytest.main()

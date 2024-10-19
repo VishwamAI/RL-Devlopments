@@ -1,24 +1,19 @@
-"""
-Test script for advanced reinforcement learning algorithms (SAC and TD3)
-"""
-
 import jax
 import jax.numpy as jnp
-import numpy as np
 import pytest
-from NeuroFlex.reinforcement_learning.advanced_rl_algorithms import SACAgent, TD3Agent, create_sac_agent, create_td3_agent
+from RL_Developments.Jax.advanced_rl_algorithms import SACAgent, TD3Agent
 
 @pytest.fixture
 def sac_agent():
     state_dim = 4
     action_dim = 2
-    return create_sac_agent(state_dim, action_dim)
+    return SACAgent(state_dim, action_dim)
 
 @pytest.fixture
 def td3_agent():
     state_dim = 4
     action_dim = 2
-    return create_td3_agent(state_dim, action_dim)
+    return TD3Agent(state_dim, action_dim)
 
 def test_sac_agent_action_selection(sac_agent):
     state = jnp.array([0.1, -0.2, 0.3, -0.4])
