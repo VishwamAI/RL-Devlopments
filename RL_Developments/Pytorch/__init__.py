@@ -4,26 +4,26 @@
 # 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
-# in the Software without restriction, including without limitation the rights
+# in the Software without restriction, including without limitation the rights 
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-# copies of the Software, and to permit persons to whom the Software is
+# copies of the Software, and to permit persons to whom the Software is 
 # furnished to do so, subject to the following conditions:
 # 
-# The above copyright notice and this permission notice shall be included in all
+# The above copyright notice and this permission notice shall be included in all 
 # copies or substantial portions of the Software.
 # 
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR 
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, 
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE 
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER 
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, 
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE 
 # SOFTWARE.
 
-
-# jax version
+# JAX version
 # __init__.py for the Reinforcement Learning Framework
 __version__ = "0.0.1"
+
 # Agentic behavior and cognition modules
 from .agentic_behavior import AgenticBehavior
 from .cognition import CognitionAgent
@@ -61,7 +61,7 @@ from .rl_module import (
 # Newly added advanced RL components
 from .hierarchical_rl import HierarchicalRL
 from .offline_rl import OfflineRL
-from .rl_withcasual_reasoning import RLWithCasualReasoning
+from .rl_with_causal_reasoning import RLWithCausalReasoning
 from .q_rl import QRLAgent
 
 __all__ = [
@@ -109,7 +109,6 @@ __all__ = [
     # Newly added advanced RL components
     'HierarchicalRL',
     'OfflineRL',
-    'RLWithCasualReasoning',
+    'RLWithCausalReasoning',
     'QRLAgent',
 ]
-

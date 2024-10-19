@@ -15,8 +15,8 @@
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
@@ -137,6 +137,91 @@ class SACAgent:
         # Soft update target networks
         self._soft_update(self.critic1, self.target_critic1)
         self._soft_update(self.critic2, self.target_critic2)
+
+    def _soft_update(self, source_net, target_net):
+        target_weights = target_net.get_weights()
+        source_weights = source_net.get_weights()
+        for i in range(len(target_weights)):
+            target_weights[i] = self.tau * source_weights[i] + (1 - self.tau) * target_weights[i]
+        target_net.set_weights(target_weights)
+
+
+class TD3Agent:
+    """Twin Delayed DDPG (TD3) agent implementation in TensorFlow."""
+    def __init__(self, state_dim, action_dim, hidden_dim=256, lr=3e-4, gamma=0.99, tau=0.005, policy_noise=0.2, noise_clip=0.5, policy_freq=2):
+        self.gamma = gamma
+        self.tau = tau
+        self.policy_noise = policy_noise
+        self.noise_clip = noise_clip
+        self.policy_freq = policy_freq
+
+        # Networks
+        self.actor = Actor(state_dim, action_dim, hidden_dim)
+        self.critic1 = Critic(state_dim, action_dim, hidden_dim)
+        self.critic2 = Critic(state_dim, action_dim, hidden_dim)
+        self.target_actor = Actor(state_dim, action_dim, hidden_dim)
+        self.target_critic1 = Critic(state_dim, action_dim, hidden_dim)
+        self.target_critic2 = Critic(state_dim, action_dim, hidden_dim)
+
+        # Initialize target networks
+        self.target_actor.set_weights(self.actor.get_weights())
+        self.target_critic1.set_weights(self.critic1.get_weights())
+        self.target_critic2.set_weights(self.critic2.get_weights())
+
+        # Optimizers
+        self.actor_optimizer = tf.keras.optimizers.Adam(learning_rate=lr)
+        self.critic_optimizer = tf.keras.optimizers.Adam(learning_rate=lr)
+
+    def select_action(self, state):
+        state = tf.convert_to_tensor(state.reshape(1, -1), dtype=tf.float32)
+        action = self.actor(state)
+        return action.numpy().flatten()
+
+    def update(self, replay_buffer, batch_size=64, step=0):
+        # Sample batch
+        state, action, reward, next_state, done = replay_buffer.sample(batch_size)
+
+        state = tf.convert_to_tensor(state, dtype=tf.float32)
+        action = tf.convert_to_tensor(action, dtype=tf.float32)
+        reward = tf.convert_to_tensor(reward.reshape(-1, 1), dtype=tf.float32)
+        next_state = tf.convert_to_tensor(next_state, dtype=tf.float32)
+        done = tf.convert_to_tensor(done.reshape(-1, 1), dtype=tf.float32)
+
+        # Add noise to target policy
+        noise = tf.clip_by_value(tf.random.normal(shape=action.shape) * self.policy_noise, -self.noise_clip, self.noise_clip)
+        next_action = tf.clip_by_value(self.target_actor(next_state) + noise, -1, 1)
+
+        # Compute target Q-values
+        target_q1 = self.target_critic1(next_state, next_action)
+        target_q2 = self.target_critic2(next_state, next_action)
+        target_q = reward + self.gamma * (1 - done) * tf.minimum(target_q1, target_q2)
+
+        # Update critics
+        with tf.GradientTape(persistent=True) as tape:
+            current_q1 = self.critic1(state, action)
+            current_q2 = self.critic2(state, action)
+            critic_loss = tf.reduce_mean(tf.square(current_q1 - target_q)) + tf.reduce_mean(tf.square(current_q2 - target_q))
+
+        critic_grads1 = tape.gradient(critic_loss, self.critic1.trainable_variables)
+        critic_grads2 = tape.gradient(critic_loss, self.critic2.trainable_variables)
+
+        self.critic_optimizer.apply_gradients(zip(critic_grads1, self.critic1.trainable_variables))
+        self.critic_optimizer.apply_gradients(zip(critic_grads2, self.critic2.trainable_variables))
+
+        # Delayed policy updates
+        if step % self.policy_freq == 0:
+            # Update actor
+            with tf.GradientTape() as tape:
+                new_actions = self.actor(state)
+                actor_loss = -tf.reduce_mean(self.critic1(state, new_actions))
+
+            actor_grads = tape.gradient(actor_loss, self.actor.trainable_variables)
+            self.actor_optimizer.apply_gradients(zip(actor_grads, self.actor.trainable_variables))
+
+            # Update target networks
+            self._soft_update(self.actor, self.target_actor)
+            self._soft_update(self.critic1, self.target_critic1)
+            self._soft_update(self.critic2, self.target_critic2)
 
     def _soft_update(self, source_net, target_net):
         target_weights = target_net.get_weights()
